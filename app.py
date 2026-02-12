@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 
 # 1. Sayfa Ayarları
-st.set_page_config(page_title="Halka Arz Takip v3", layout="wide")
+st.set_page_config(page_title="Halka Arz Takip v4", layout="wide")
 
-# 2. Görsel Stil (Yeşil Kar Rakamı)
+# 2. Görsel Stil
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] {
@@ -21,9 +21,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💹 Halka Arz Kar Takip Sistemi")
+st.title("💹 Akıllı Halka Arz Takip Paneli")
 
-# 3. Veri Saklama (Sütun isimleri: Hisse, Alis, Satis, Lot, Hesap, Kar)
+# 3. Veri Hazırlığı
 if 'df' not in st.session_state:
     initial_data = [
         {"Hisse": "PAHOL", "Alis": 1.50, "Satis": 1.68, "Lot": 2800, "Hesap": 3, "Kar": 1512.00},
@@ -39,22 +39,33 @@ if 'df' not in st.session_state:
 
 # 4. Yan Menü: Veri Girişi
 with st.sidebar:
-    st.header("➕ Yeni Satış Ekle")
+    st.header("➕ Satış Ekle/Güncelle")
     h_adi = st.text_input("Hisse Kodu").upper()
     h_alis = st.number_input("Alış Fiyatı", min_value=0.0, format="%.2f")
     h_satis = st.number_input("Satış Fiyatı", min_value=0.0, format="%.2f")
     h_lot = st.number_input("1 Hesaptaki Lot", min_value=0)
     h_hesap_sayisi = st.selectbox("Kaç Hesap Sattın?", [1, 2, 3], index=2)
     
-    if st.button("Listeye Kaydet"):
+    if st.button("Sisteme İşle"):
         if h_adi and h_lot > 0:
-            hesaplanan_kar = (h_satis - h_alis) * h_lot * h_hesap_sayisi
-            yeni_satir = {
-                "Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, 
-                "Lot": h_lot, "Hesap": h_hesap_sayisi, "Kar": hesaplanan_kar
-            }
-            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([yeni_satir])], ignore_index=True)
-            st.success(f"{h_adi} eklendi!")
+            yeni_hesaplanan_kar = (h_satis - h_alis) * h_lot * h_hesap_sayisi
+            
+            # EĞER HİSSE ZATEN VARSA ÜZERİNE EKLE
+            if h_adi in st.session_state.df["Hisse"].values:
+                idx = st.session_state.df[st.session_state.df["Hisse"] == h_adi].index[0]
+                st.session_state.df.at[idx, 'Hesap'] += h_hesap_sayisi
+                st.session_state.df.at[idx, 'Kar'] += yeni_hesaplanan_kar
+                # Satış fiyatını en son girilen fiyatla güncelleyelim
+                st.session_state.df.at[idx, 'Satis'] = h_satis 
+                st.success(f"{h_adi} güncellendi! Toplam {st.session_state.df.at[idx, 'Hesap']} hesap oldu.")
+            else:
+                # EĞER HİSSE YOKSA YENİ SATIR EKLE
+                yeni_satir = {
+                    "Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, 
+                    "Lot": h_lot, "Hesap": h_hesap_sayisi, "Kar": yeni_hesaplanan_kar
+                }
+                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([yeni_satir])], ignore_index=True)
+                st.success(f"{h_adi} yeni kayıt olarak eklendi!")
             st.rerun()
 
 # 5. Ana Ekran
@@ -62,12 +73,13 @@ toplam_net_kar = st.session_state.df["Kar"].sum()
 st.metric(label="🚀 CEBE GİREN TOPLAM NET KAZANÇ", value=f"{toplam_net_kar:,.2f} TL")
 
 st.write("---")
-st.subheader("📋 Satış Detayları")
+st.subheader("📋 Güncel Portföy Özeti")
 st.dataframe(
     st.session_state.df,
     column_config={
-        "Kar": st.column_config.NumberColumn("Toplam Kar (TL)", format="%.2f TL"),
-        "Hesap": "Satılan Hesap Adedi"
+        "Kar": st.column_config.NumberColumn("Toplam Birikmiş Kar", format="%.2f TL"),
+        "Hesap": "Toplam Satılan Hesap",
+        "Lot": "Hesap Başı Lot"
     },
     use_container_width=True,
     hide_index=True
@@ -75,10 +87,10 @@ st.dataframe(
 
 # 6. Kayıt Silme
 st.write("---")
-with st.expander("🗑️ Kayıt Sil"):
+with st.expander("🗑️ Kayıt Yönetimi"):
     liste = st.session_state.df["Hisse"].tolist()
     if liste:
-        secilen = st.selectbox("Silmek istediğin hisseyi seç:", liste)
-        if st.button("Seçili Hisseyi Sil"):
+        secilen = st.selectbox("Hisse Seç:", liste)
+        if st.button("Hisseye Ait Tüm Kaydı Sil"):
             st.session_state.df = st.session_state.df[st.session_state.df["Hisse"] != secilen].reset_index(drop=True)
             st.rerun()
