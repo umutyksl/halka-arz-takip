@@ -1,32 +1,30 @@
 import streamlit as st
 import pandas as pd
 from gspread_pandas import Spread, Client
-from google.oauth2.service_account import Credentials
+import json
 
 # --- GOOGLE SHEETS AYARLARI ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
 
 def get_spread():
     try:
-        # Secrets'tan TOML formatındaki veriyi al
-        creds_info = st.secrets["gcp_service_account"]
+        # Streamlit secrets'tan veriyi dict olarak çek
+        # st.secrets bir AttrDict'tir, bunu gerçek bir dict'e zorluyoruz
+        creds = dict(st.secrets["gcp_service_account"])
         
-        # Bu kısım hatayı çözen kritik nokta:
-        # TOML'dan gelen veriyi temiz bir Python sözlüğüne (dict) çeviriyoruz
-        creds_dict = {key: value for key, value in creds_info.items()}
+        # Private key içindeki gerçek yeni satır karakterlerini (varsa) işle
+        if "private_key" in creds:
+            creds["private_key"] = creds["private_key"].replace("\\n", "\n")
         
-        # private_key içindeki \n karakterlerini düzelt (Eğer bozulduysa)
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-            
-        return Spread(SHEET_ID, creds=creds_dict)
+        return Spread(SHEET_ID, creds=creds)
     except Exception as e:
         st.error(f"Kimlik doğrulama hatası: {e}")
         return None
 
-# --- SAYFA AYARLARI ---
+# --- GERİ KALAN KODLAR ---
 st.set_page_config(page_title="Halka Arz Takip v4", layout="wide")
 
+# Görsel Stil
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] { color: #00c853 !important; font-size: 48px !important; font-weight: bold !important; }
@@ -36,7 +34,6 @@ st.markdown("""
 
 st.title("💹 Tam Otomatik Halka Arz Takip")
 
-# Verileri Google Sheets'ten Çek
 spread = get_spread()
 if spread:
     try:
@@ -47,51 +44,34 @@ if spread:
 else:
     st.stop()
 
-# Eğer tablo boşsa sütunları oluştur
 if df.empty:
     df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"])
 
-# --- YAN MENÜ: Veri Girişi ---
+# Veri Girişi
 with st.sidebar:
-    st.header("➕ Satış Ekle / Güncelle")
+    st.header("➕ Satış Ekle")
     h_adi = st.text_input("Hisse Kodu").upper()
     h_alis = st.number_input("Alış Fiyatı", min_value=0.0, format="%.2f")
     h_satis = st.number_input("Satış Fiyatı", min_value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", min_value=0)
-    h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3], index=2)
+    h_hesap = st.selectbox("Hesap", [1, 2, 3], index=2)
     
-    if st.button("Google Tabloya Kaydet"):
+    if st.button("Kaydet"):
         if h_adi and h_lot > 0:
-            # Kar hesaplama (Satis - Alis) * Lot * Hesap
             yeni_kar = (h_satis - h_alis) * h_lot * h_hesap
-            
             if h_adi in df["Hisse"].values:
                 idx = df[df["Hisse"] == h_adi].index[0]
                 df.at[idx, 'Hesap'] = int(df.at[idx, 'Hesap']) + h_hesap
                 df.at[idx, 'Kar'] = float(df.at[idx, 'Kar']) + yeni_kar
-                df.at[idx, 'Satis'] = h_satis
             else:
                 yeni_satir = pd.DataFrame([{"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar}])
                 df = pd.concat([df, yeni_satir], ignore_index=True)
             
-            # Kaydet ve Yenile
             spread.df_to_sheet(df, index=False, replace=True)
-            st.success("Kaydedildi!")
+            st.success("Başarıyla Google Sheets'e kaydedildi!")
             st.rerun()
 
-# --- ANA PANEL ---
-# Kar sütununu sayıya çevir (Hata önleyici)
+# Ana Panel
 df["Kar"] = pd.to_numeric(df["Kar"], errors='coerce').fillna(0)
-toplam_net_kar = df["Kar"].sum()
-
-st.metric(label="🚀 CEBE GİREN TOPLAM NET KAZANÇ", value=f"{toplam_net_kar:,.2f} TL")
+st.metric(label="🚀 TOPLAM NET KAZANÇ", value=f"{df['Kar'].sum():,.2f} TL")
 st.dataframe(df, use_container_width=True, hide_index=True)
-
-with st.expander("🗑️ Kayıt Sil"):
-    liste = df["Hisse"].tolist()
-    if liste:
-        secilen = st.selectbox("Silinecek Hisse:", liste)
-        if st.button("Kalıcı Olarak Sil"):
-            df = df[df["Hisse"] != secilen]
-            spread.df_to_sheet(df, index=False, replace=True)
-            st.rerun()
