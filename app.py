@@ -27,38 +27,6 @@ def get_gspread_client():
         st.error(f"Kimlik doğrulama hatası: {e}")
         return None
 
-
-# ... (Üst kısımdaki get_gspread_client fonksiyonu aynı kalsın)
-
-# Verileri Çek
-client = get_gspread_client()
-if client:
-    try:
-        sheet = client.open_by_key(SHEET_ID).sheet1
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # EĞER TABLO BOŞSA VEYA ZİRAAT VERİLERİ YOKSA EKLE
-        if df.empty:
-            # Buraya bahsettiğin Ziraat Yatırım dökümanındaki kârı temsil eden veriyi giriyoruz
-            ziraat_verisi = {
-                "Hisse": "ZIRAAT_OZET", 
-                "Alis": 0.0, 
-                "Satis": 0.0, 
-                "Lot": 1, 
-                "Hesap": 1, 
-                "Kar": 11450.00  # Bahsettiğin 11 bin küsür TL kâr
-            }
-            df = pd.DataFrame([ziraat_verisi])
-            # Sayfayı bu başlangıç verisiyle güncelle
-            sheet.update([df.columns.values.tolist()] + df.values.tolist())
-            
-    except Exception as e:
-        st.error(f"Veri işleme hatası: {e}")
-        df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"])
-else:
-    st.stop()
-
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Halka Arz Takip v5", layout="wide")
 
