@@ -4,12 +4,9 @@ import pandas as pd
 # Sayfa Ayarları
 st.set_page_config(page_title="Halka Arz Takip v2", layout="wide")
 
-# Görsel Stil Ayarları (Hata veren kısım düzeltildi)
+# Görsel Stil Ayarları
 st.markdown("""
     <style>
-    .main {
-        background-color: #f8f9fa;
-    }
     .stMetric {
         background-color: #ffffff;
         padding: 15px;
@@ -17,15 +14,12 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         border-left: 6px solid #198754;
     }
-    div[data-testid="stMetricValue"] {
-        color: #198754;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("💹 Halka Arz Kar Takip Paneli (3 Hesap)")
 
-# Ekstrendeki Veriler ve AKHAN Satışı Dahil Liste
+# Mevcut Veriler
 initial_data = [
     {"Hisse": "PAHOL", "Alis": 1.50, "Satis": 1.68, "Lot": 2800, "Kar_3_Hesap": 1512.00},
     {"Hisse": "ZERGY", "Alis": 13.00, "Satis": 13.22, "Lot": 193, "Kar_3_Hesap": 127.38},
@@ -37,14 +31,13 @@ initial_data = [
     {"Hisse": "AKHAN", "Alis": 21.50, "Satis": 31.46, "Lot": 35, "Kar_3_Hesap": 1045.80}
 ]
 
-# Veri saklama (Session State)
 if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame(initial_data)
 
 # --- YAN MENÜ: Yeni Hisse Ekleme ---
 with st.sidebar:
     st.header("➕ Yeni Halka Arz Ekle")
-    h_adi = st.text_input("Hisse Kodu (Örn: NETCD)").upper()
+    h_adi = st.text_input("Hisse Kodu").upper()
     h_alis = st.number_input("Alış Fiyatı", min_value=0.0, format="%.2f")
     h_satis = st.number_input("Satış Fiyatı", min_value=0.0, format="%.2f")
     h_lot = st.number_input("1 Hesaptaki Lot", min_value=0)
@@ -59,7 +52,6 @@ with st.sidebar:
             st.warning("Lütfen Hisse Adı ve Lot girin.")
 
 # --- ANA PANEL ---
-# Toplam Kar Hesapla
 toplam_kar = st.session_state.df["Kar_3_Hesap"].sum()
 
 col1, col2 = st.columns([2, 1])
@@ -69,11 +61,21 @@ with col2:
     st.info(f"Toplam {len(st.session_state.df)} farklı halka arz satışı yapıldı.")
 
 st.subheader("📋 İşlem Geçmişi")
-# Tabloyu Renkli ve Okunaklı Göster
+
+# Hata veren background_gradient yerine column_config kullanarak renklendirme yapıyoruz
 st.dataframe(
-    st.session_state.df.style.background_gradient(subset=["Kar_3_Hesap"], cmap="Greens")
-    .format(subset=["Alis", "Satis", "Kar_3_Hesap"], formatter="{:.2f} TL"),
-    use_container_width=True
+    st.session_state.df,
+    column_config={
+        "Kar_3_Hesap": st.column_config.NumberColumn(
+            "Toplam Kar (TL)",
+            format="%.2f TL",
+        ),
+        "Alis": "Alış Fiyatı",
+        "Satis": "Satış Fiyatı",
+        "Lot": "Lot (Tek)"
+    },
+    use_container_width=True,
+    hide_index=True
 )
 
 # --- SİLME BÖLÜMÜ ---
