@@ -21,8 +21,8 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM (CSS GÜNCELLEMESİ) ---
-st.set_page_config(page_title="Borsa Takip v32", layout="wide")
+# --- TASARIM (2PX BORDER VE DİNAMİK RENKLER) ---
+st.set_page_config(page_title="Borsa Takip v33", layout="wide")
 
 st.markdown("""
     <style>
@@ -31,11 +31,11 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05) !important;
         border-radius: 15px !important;
         padding: 20px !important;
-        border: 1px solid #444444 !important; /* Varsayılan çerçeve */
+        border: 2px solid #444444 !important; /* Varsayılan 2px gri çerçeve */
         transition: all 0.3s ease;
     }
 
-    /* 2. EĞER ZARAR VARSA (KIRMIZI YAP) */
+    /* 2. ZARAR DURUMU: ÇERÇEVE VE YAZI KIRMIZI */
     div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="down"]) {
         border: 2px solid #ff4b4b !important;
     }
@@ -43,7 +43,7 @@ st.markdown("""
         color: #ff4b4b !important;
     }
 
-    /* 3. EĞER KAR VARSA (YEŞİL YAP) */
+    /* 3. KAR DURUMU: ÇERÇEVE VE YAZI YEŞİL */
     div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="up"]) {
         border: 2px solid #09ab3b !important;
     }
@@ -51,7 +51,7 @@ st.markdown("""
         color: #09ab3b !important;
     }
 
-    /* 4. RAKAMLAR VE ETİKETLER */
+    /* 4. METİN DÜZENLEMELERİ */
     div[data-testid="stMetricValue"] > div { font-size: 38px !important; font-weight: 800 !important; }
     div[data-testid="stMetricLabel"] > div > p { color: #cccccc !important; font-size: 14px !important; font-weight: bold !important; }
     
@@ -85,20 +85,18 @@ except Exception as e:
     st.error(f"Veri yükleme hatası: {e}")
     df = pd.DataFrame(columns=expected_cols)
 
-# --- ÜST PANEL (METRİKLER) ---
+# --- ÜST PANEL ---
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
 nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
 with col1:
-    # Halka arz karı için delta ekledik (Renk tetiklenmesi için)
     st.metric(
         label="🎁 TOPLAM HALKA ARZ KAR", 
         value=f"{tr_format(ha_kar)} TL",
         delta=f"{tr_format(ha_kar)} TL" if ha_kar != 0 else None
     )
 with col2:
-    # Borsa durumu için delta zaten vardı
     st.metric(
         label="📊 BORSA TOPLAM DURUM", 
         value=f"{tr_format(nb_kar)} TL", 
@@ -108,7 +106,7 @@ with col2:
 # --- TABLOLAR VE GÜNCELLEME ---
 st.write("---")
 if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
-    with st.spinner("Borsa verileri tazeleniyor..."):
+    with st.spinner("Veriler güncelleniyor..."):
         for index, row in df.iterrows():
             clean_name = str(row['Hisse']).replace("#", "").strip()
             if str(row['Durum']) == "Aktif" and clean_name.endswith(".IS"):
@@ -121,7 +119,7 @@ if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
                 except: continue
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("Fiyatlar Güncellendi!")
+        st.success("Güncellendi!")
         st.rerun()
 
 tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
@@ -133,7 +131,7 @@ with st.sidebar:
     st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_durum = st.selectbox("İşlem Durumu", ["Aktif", "Satıldı"])
-    h_adi_raw = st.text_input("Hisse Kodu (Örn: GENTS.IS)").upper().strip()
+    h_adi_raw = st.text_input("Hisse Kodu").upper().strip()
     
     h_adi_clean = h_adi_raw.replace("#", "")
     anlik_fiyat = 0.0
@@ -145,25 +143,18 @@ with st.sidebar:
                 st.success(f"Piyasa: {anlik_fiyat:.2f} TL")
         except: pass
 
-    h_alis = st.number_input("Alış Fiyatı (Maliyet)", value=0.0, format="%.2f")
+    h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
     h_satis = st.number_input("Güncel / Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
-        if h_adi_raw == "":
-            st.error("Hisse kodu boş olamaz!")
-        else:
+        if h_adi_raw != "":
             yeni_kar = (h_satis - h_alis) * h_lot * h_hesap
-            yeni_veri = {
-                "Hisse": h_adi_raw, "Alis": h_alis, "Satis": h_satis, 
-                "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar, 
-                "Tur": h_tur, "Durum": h_durum
-            }
+            yeni_veri = {"Hisse": h_adi_raw, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar, "Tur": h_tur, "Durum": h_durum}
             df = pd.concat([df[df["Hisse"] != h_adi_raw], pd.DataFrame([yeni_veri])], ignore_index=True)
             sheet.clear()
             sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-            st.success("Başarıyla Senkronize Edildi!")
             st.rerun()
 
 # --- SİLME ---
