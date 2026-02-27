@@ -30,7 +30,7 @@ st.set_page_config(page_title="Halka Arz & Borsa Takip v10", layout="wide")
 st.markdown("""
     <style>
     [data-testid='stMetricValue'] { font-size: 45px !important; font-weight: bold !important; }
-    .stMetric { border-radius: 15px; padding: 15px; border: 1px solid #e6e9ef; background-color: #ffffff; }
+    .stMetric { border-radius: 15px; padding: 15px; border: 1px solid #e6e9ef; background-color: #000000; }
     </style>
     """, unsafe_allow_html=True)
 
