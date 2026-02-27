@@ -27,7 +27,7 @@ st.set_page_config(page_title="Borsa Takip v25", layout="wide")
 st.markdown("""
     <style>
     /* 1. TÜM SAYFA SİYAH */
-    .stApp { background-color: #000000 !important; color: #ffffff !important; }
+    .stApp { background-color: #000000 !important; color: #ffffff; }
     
     /* 2. KAZANÇ KUTULARI: BEMBEYAZ */
     div[data-testid="stMetric"] {
@@ -40,7 +40,7 @@ st.markdown("""
     
     /* 3. KUTU İÇİNDEKİ RAKAMLAR: KOYU YEŞİL (Beyazda görünmesi için) */
     div[data-testid="stMetricValue"] > div {
-        color: #1b5e20 !important;
+        color: #2e7d32 !important;
         font-size: 46px !important;
         font-weight: 900 !important;
         display: block !important;
