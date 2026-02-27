@@ -27,7 +27,7 @@ st.set_page_config(page_title="Borsa Takip v25", layout="wide")
 st.markdown("""
     <style>
     /* 1. TÜM SAYFA SİYAH */
-    .stApp { background-color: #000000 !important; color: #ffffff; }
+   /* .stApp { background-color: #000000 !important; color: #ffffff; } */
     
     /* 2. KAZANÇ KUTULARI: BEMBEYAZ */
     div[data-testid="stMetric"] {
