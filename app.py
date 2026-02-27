@@ -21,8 +21,8 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM: SİYAH ARKA PLAN & BEYAZ KAZANÇ KUTULARI ---
-st.set_page_config(page_title="Borsa Takip v24", layout="wide")
+# --- TASARIM: SİYAH ARKA PLAN & BEYAZ KUTU ÜZERİNE GÖRÜNÜR YAZILAR ---
+st.set_page_config(page_title="Borsa Takip v25", layout="wide")
 
 st.markdown("""
     <style>
@@ -32,41 +32,44 @@ st.markdown("""
     /* 2. KAZANÇ KUTULARI: BEMBEYAZ */
     div[data-testid="stMetric"] {
         background-color: #ffffff !important;
-        border: 3px solid #00c853 !important;
+        border: 2px solid #2e7d32 !important;
         border-radius: 15px !important;
-        padding: 25px !important;
-        box-shadow: 0 0 15px rgba(0, 200, 83, 0.3) !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 15px rgba(255,255,255,0.1) !important;
     }
     
-    /* 3. KUTU İÇİNDEKİ RAKAMLAR: NET YEŞİL */
+    /* 3. KUTU İÇİNDEKİ RAKAMLAR: KOYU YEŞİL (Beyazda görünmesi için) */
     div[data-testid="stMetricValue"] > div {
-        color: #00c853 !important;
-        font-size: 50px !important;
+        color: #1b5e20 !important;
+        font-size: 46px !important;
         font-weight: 900 !important;
+        display: block !important;
+        visibility: visible !important;
     }
     
-    /* 4. KUTU BAŞLIKLARI: SİYAH (Beyaz üzerinde görünsün diye) */
+    /* 4. KUTU BAŞLIKLARI: SAF SİYAH */
     div[data-testid="stMetricLabel"] > div > p {
         color: #000000 !important;
-        font-size: 18px !important;
+        font-size: 16px !important;
         font-weight: bold !important;
+        display: block !important;
+        visibility: visible !important;
     }
 
     /* 5. GENEL YAZILAR VE TABLO BAŞLIKLARI: BEYAZ */
     h1, h2, h3, p, label, span { color: #ffffff !important; }
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p { color: white !important; }
     
-    /* Yan Menü Tasarımı */
-    [data-testid="stSidebar"] { background-color: #111111 !important; border-right: 1px solid #333333; }
+    /* Tablo Tasarımı */
+    .stDataFrame { background-color: #111111; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📟 Borsa Takip Terminali")
+st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
 if not client: st.stop()
 
-# --- VERİ ÇEKME (Sayıları bozmayan saf yapı) ---
+# --- VERİ ÇEKME ---
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
     all_values = sheet.get_all_values()
@@ -77,7 +80,6 @@ try:
 
     if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
 
-    # Sayı Dönüşümü
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
 except:
@@ -89,37 +91,36 @@ nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("🎁 HALKA ARZ TOPLAM KAR", f"{tr_format(ha_kar)} TL")
+    st.metric("🎁 TOPLAM HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
 with col2:
-    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📈 BORSA KAR"
+    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
     st.metric(nb_label, f"{tr_format(nb_kar)} TL")
 
 # --- TABLOLAR ---
 st.write("---")
-tab1, tab2 = st.tabs(["💎 Halka Arz Portföyü", "📊 Borsa Takip Listesi"])
+tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
 with tab1:
     st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 with tab2:
     st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 
-# --- YAN MENÜ: İŞLEMLER ---
+# --- YAN MENÜ ---
 with st.sidebar:
-    st.header("🏢 İşlem Merkezi")
+    st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_adi = st.text_input("Hisse Kodu").upper().strip()
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
-    h_satis = st.number_input("Satış / Güncel Fiyat", value=0.0, format="%.2f")
+    h_satis = st.number_input("Güncel/Satış Fiyatı", value=0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
-        # Eskisini sil, yenisini ekle
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("İşlem Başarılı!")
+        st.success("Başarıyla Kaydedildi!")
         st.rerun()
 
     st.write("---")
