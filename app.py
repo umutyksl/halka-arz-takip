@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import yfinance as yf
 
-# --- GOOGLE BAĞLANTI (Senin en güvendiğin v9 yapısı) ---
+# --- GOOGLE BAĞLANTI (En sağlam yapı) ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
 
 def get_client():
@@ -21,43 +21,41 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM: SİYAH ARKA PLAN VE NET RENKLER (CSS GÜNCELLENDİ) ---
-st.set_page_config(page_title="Borsa Portföy v19", layout="wide")
+# --- TASARIM: BEYAZ KUTU & YEŞİL YAZI ---
+st.set_page_config(page_title="Halka Arz Takip v20", layout="wide")
 
 st.markdown("""
     <style>
-    /* Sayfa Arkaplanı */
-    .stApp { background-color: #000000 !important; }
+    /* Sayfa Arkaplanı Açık Gri (Kutular belli olsun diye) */
+    .stApp { background-color: #f8f9fa; }
     
-    /* Metrik Değerlerini Zorla Yeşil Yap */
+    /* KUTU AYARI: Arkaplan BEYAZ, Kenarlık YEŞİL */
+    div[data-testid="stMetric"] {
+        background-color: #ffffff !important;
+        border: 2px solid #00c853 !important;
+        border-radius: 15px !important;
+        padding: 20px !important;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    /* YAZI AYARI: Rakamlar YEŞİL */
     div[data-testid="stMetricValue"] > div {
-        color: #00ff00 !important;
-        font-size: 50px !important;
+        color: #00c853 !important;
+        font-size: 45px !important;
         font-weight: bold !important;
     }
     
-    /* Metrik Kutusu Siyah */
-    div[data-testid="stMetric"] {
-        background-color: #111111 !important;
-        border: 1px solid #333333 !important;
-        border-radius: 12px !important;
-        padding: 20px !important;
-    }
-
-    /* Tüm Yazılar Beyaz */
-    h1, h2, h3, p, label, span, .stMarkdown { color: #ffffff !important; }
-    
-    /* Tablo Tasarımı */
-    .stDataFrame { background-color: #111111 !important; }
+    /* Başlık ve Diğer Yazılar Siyah/Koyu Gri */
+    h1, h2, h3, p, label { color: #333333 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📟 Borsa Takip Terminali")
+st.title("💹 Halka Arz & Borsa Takip Paneli")
 
 client = get_client()
 if not client: st.stop()
 
-# --- VERİ ÇEKME (v9 Mantığı - Sayılara asla dokunma) ---
+# --- VERİ ÇEKME ---
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
     all_values = sheet.get_all_values()
@@ -68,7 +66,7 @@ try:
 
     if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
 
-    # Sayı Dönüşümü (Sadece virgül-nokta değişimi, bölme/çarpma yok)
+    # Sayı Dönüşümü (Sadece virgül-nokta düzeltme)
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
 except:
@@ -80,63 +78,57 @@ nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("🎁 HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
+    st.metric("🚀 HALKA ARZ TOPLAM KAR", f"{tr_format(ha_kar)} TL")
 with col2:
-    # Zarar varsa başlık değişsin
-    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
-    st.metric(nb_label, f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL" if nb_kar < 0 else None, delta_color="inverse")
+    label = "📉 BORSA ZARAR" if nb_kar < 0 else "📈 BORSA KAR"
+    # Zararda delta kırmızı görünür
+    st.metric(label, f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL" if nb_kar < 0 else None, delta_color="inverse")
 
 # --- TABLOLAR ---
-t1, t2 = st.tabs(["📁 Halka Arzlarım", "💹 Normal Hisse/Borsa"])
-with t1:
+st.write("---")
+tab1, tab2 = st.tabs(["🎁 Halka Arz Portföyü", "📊 Normal Borsa Portföyü"])
+with tab1:
     st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
-with t2:
+with tab2:
     st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 
 # --- YAN MENÜ: GİRİŞ ---
 with st.sidebar:
-    st.header("➕ Yeni İşlem")
-    h_tur = st.radio("Tür", ["Halka Arz", "Normal Borsa"])
+    st.header("➕ Yeni İşlem Ekle")
+    st.info("Kuruşlar için NOKTA kullanın (Örn: 1.68)")
+    h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_adi = st.text_input("Hisse Kodu").upper().strip()
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
-    
-    # Canlı Fiyat
     h_satis = st.number_input("Güncel/Satış Fiyatı", value=0.0, format="%.2f")
-    if h_tur == "Normal Borsa" and h_adi:
-        if st.button("🔍 Canlı Fiyat Çek"):
-            try:
-                p = yf.Ticker(f"{h_adi}.IS").fast_info['last_price']
-                st.info(f"Anlık: {p:.2f} TL")
-            except: st.error("Fiyat gelmedi")
 
-    if st.button("💾 Google Sheets'e Kaydet"):
-        yeni_kar = (h_satis - h_alis) * h_lot * h_hesap
-        yeni_satir = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar, "Tur": h_tur}
-        # Eskisini sil, yenisini ekle
-        df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni_satir])], ignore_index=True)
+    if st.button("💾 Google Tabloya Kaydet"):
+        kar = (h_satis - h_alis) * h_lot * h_hesap
+        yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
+        df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("Başarıyla Yedeklendi!")
+        st.success("Kaydedildi!")
         st.rerun()
 
-# --- YÖNETİM ---
+    st.write("---")
+    if st.button("🚨 TÜM VERİLERİ SIFIRLA"):
+        sheet.clear()
+        sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+        st.rerun()
+
+# --- SİLME BÖLGESİ ---
 st.write("---")
 st.subheader("🗑️ Kayıt Yönetimi")
 sil_liste = df["Hisse"].tolist()
 if sil_liste:
-    c_s1, c_s2 = st.columns([3, 1])
-    with c_s1:
-        s_sec = st.selectbox("Silinecek Hisse:", sil_liste)
-    with c_s2:
-        if st.button("❌ Seçileni Sil"):
+    col_s1, col_s2 = st.columns([3, 1])
+    with col_s1:
+        s_sec = st.selectbox("Silmek İstediğiniz Hisse:", ["Seçiniz..."] + sil_liste)
+    with col_s2:
+        if s_sec != "Seçiniz..." and st.button("❌ Seçileni Sil"):
             df = df[df["Hisse"] != s_sec]
             sheet.clear()
             sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
             st.rerun()
-
-if st.button("🚨 TÜM VERİLERİ SIFIRLA"):
-    sheet.clear()
-    sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
-    st.rerun()
