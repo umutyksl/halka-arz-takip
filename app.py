@@ -40,7 +40,7 @@ st.markdown("""
     /* 2. METRİK DEĞERLERİ (BÜYÜK RAKAMLAR) */
     div[data-testid="stMetricValue"] > div {
         color: #ffffff !important;
-        font-size: 40px !important;
+        font-size: 4px !important;
         font-weight: 800 !important;
     }
     
