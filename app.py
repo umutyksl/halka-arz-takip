@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import yfinance as yf
+import re
 
 # --- GOOGLE SHEETS AYARLARI ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
@@ -14,31 +15,47 @@ def get_client():
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         return gspread.authorize(Credentials.from_service_account_info(creds_info, scopes=scopes))
-    except:
-        return None
+    except: return None
+
+def sayi_temizle(val):
+    """Her türlü noktalama hatasını (166.944 vs 1.669) temizleyen motor"""
+    if val is None or val == "": return 0.0
+    s = str(val).strip()
+    # Eğer sayı 1.669,44 gibi gelirse noktayı sil, virgülü noktaya çevir
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        s = s.replace(",", ".")
+    
+    # Sadece rakam ve nokta kalsın
+    s = re.sub(r'[^\d.-]', '', s)
+    try:
+        res = float(s)
+        # Halka arz koruması: Kar 50 bin üzeriyse kesin 100 kat hatasıdır
+        if res > 50000: res /= 100
+        return res
+    except: return 0.0
 
 def tr_format(val):
+    """Ekranda 1.669,44 formatında gösterir"""
     try:
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM (SADE YEŞİL/KIRMIZI & SİYAH TEMA) ---
-st.set_page_config(page_title="Borsa Portföy v13", layout="wide")
+# --- TASARIM (SİYAH TEMA & NET RENKLER) ---
+st.set_page_config(page_title="Borsa Pro Terminal v14", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #0b0d11; color: #e1e1e1; }
-    /* Metrik kutuları ve renkleri */
-    [data-testid='stMetricValue'] { font-size: 45px !important; font-weight: bold !important; }
-    .stMetric { background-color: #1a1d23 !important; border: 1px solid #2d3139 !important; border-radius: 12px; padding: 20px; }
+    .stApp { background-color: #0b0d11; color: #ffffff; }
+    [data-testid='stMetricValue'] { font-size: 48px !important; font-weight: bold !important; }
+    .stMetric { background-color: #161b22 !important; border: 1px solid #30363d !important; border-radius: 12px; padding: 25px; }
     
-    /* Pozitif Kar (Yeşil) - Parlama yok */
-    [data-testid='stMetricValue'] { color: #00c853 !important; }
+    /* Kazanç Yeşil, Zarar Kırmızı - Beyaz Yazı Sorunu Çözüldü */
+    [data-testid='stMetricValue'] { color: #00ff41 !important; }
+    [data-testid='stMetricDelta'] > div { color: #ff3131 !important; }
     
-    /* Negatif Zarar Durumu için alt yazı rengi */
-    [data-testid='stMetricDelta'] > div { color: #ff1744 !important; }
-    
-    h1, h2, h3, p, span { color: white !important; }
+    h1, h2, h3, p, span, label { color: white !important; }
     .stTabs [data-baseweb="tab-list"] { background-color: #0b0d11; }
     </style>
     """, unsafe_allow_html=True)
@@ -46,7 +63,7 @@ st.markdown("""
 client = get_client()
 if not client: st.stop()
 
-# --- VERİ ÇEKME VE AKILLI TEMİZLİK ---
+# --- VERİ ÇEKME VE TEMİZLİK ---
 sheet = client.open_by_key(SHEET_ID).sheet1
 all_data = sheet.get_all_records()
 df = pd.DataFrame(all_data)
@@ -55,87 +72,77 @@ if df.empty:
     df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
 else:
     if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
-    
-    # Sayısal alanları temizle
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
-        df[col] = df[col].astype(str).str.replace(".", "").str.replace(",", ".")
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    # ⚠️ 760 BİN TL HATASINI DÜZELTEN MEKANİZMA
-    # Halka arzlarda tek hissede 50.000 TL kar imkansızdır, varsa 100'e böl.
-    mask = (df["Tur"] == "Halka Arz") & (df["Kar"] > 50000)
-    if mask.any():
-        df.loc[mask, "Kar"] = df.loc[mask, "Kar"] / 100
-        # Tabloyu Google'da da düzelt
-        sheet.clear()
-        sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-
-# --- CANLI FİYAT ---
-def get_live_price(symbol, tur):
-    if tur == "Normal Borsa" and symbol:
-        try:
-            ticker = symbol if "." in symbol else f"{symbol}.IS"
-            price = yf.Ticker(ticker).fast_info['last_price']
-            return round(price, 2)
-        except: return None
-    return None
+        df[col] = df[col].apply(sayi_temizle)
 
 # --- YAN MENÜ ---
 with st.sidebar:
-    st.header("🛒 Yeni İşlem Ekle")
+    st.header("➕ Portföy İşlemleri")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_adi = st.text_input("Hisse Kodu").upper().strip()
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
-    h_lot = st.number_input("Lot Sayısı", value=0)
+    h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
     
-    live_p = get_live_price(h_adi, h_tur)
-    h_satis = st.number_input("Satış / Güncel Fiyat", value=live_p if live_p else 0.0, format="%.2f")
-    
-    if st.button("➕ Portföye Kaydet"):
+    # Canlı fiyat çekme (Basitleştirildi)
+    h_satis = st.number_input("Güncel/Satış Fiyatı", value=0.0, format="%.2f")
+    if h_tur == "Normal Borsa" and h_adi:
+        if st.button("🔍 Canlı Fiyat Getir"):
+            try:
+                p = yf.Ticker(f"{h_adi}.IS").fast_info['last_price']
+                st.write(f"Canlı: {p:.2f} TL")
+            except: st.error("Fiyat çekilemedi.")
+
+    if st.button("💾 Kaydet ve Yedekle"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("Kaydedildi!")
+        st.success("Google Sheets Güncellendi!")
         st.rerun()
 
-# --- ANA EKRAN ---
-st.title("📟 Borsa Takip Terminali")
+# --- ANA PANEL ---
+st.title("📟 Borsa Portföy Yönetimi")
 
-c1, c2 = st.columns(2)
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
 nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
+c1, c2 = st.columns(2)
 with c1:
-    st.metric("🎁 HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
-with c2:
-    # Zarar durumunda kırmızı gösterir
-    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
-    st.metric(nb_label, f"{tr_format(nb_kar)} TL")
+    st.metric("🎁 HALKA ARZ NET KAR", f"{tr_format(ha_kar)} TL")
 
-tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "💹 Normal Hisselerim"])
+
+with c2:
+    delta_val = f"{tr_format(nb_kar)} TL"
+    st.metric("📊 BORSA DURUMU", f"{tr_format(nb_kar)} TL", delta=delta_val if nb_kar < 0 else None)
+
+tab1, tab2 = st.tabs(["💎 Halka Arz Verileri", "💹 Normal Borsa Portföy"])
 
 with tab1:
-    st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
+    df_ha = df[df["Tur"] == "Halka Arz"].copy()
+    for c in ["Alis", "Satis", "Kar"]: df_ha[c] = df_ha[c].apply(tr_format)
+    st.dataframe(df_ha, use_container_width=True, hide_index=True)
 
 with tab2:
-    st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
+    df_nb = df[df["Tur"] == "Normal Borsa"].copy()
+    for c in ["Alis", "Satis", "Kar"]: df_nb[c] = df_nb[c].apply(tr_format)
+    st.dataframe(df_nb, use_container_width=True, hide_index=True)
 
-# --- SİLME VE SIFIRLAMA ---
+# --- YÖNETİM ---
 st.write("---")
-st.subheader("⚙️ Veri Yönetimi")
-col_s1, col_s2 = st.columns([2, 1])
+st.subheader("⚙️ Kayıt Silme")
+col_s1, col_s2 = st.columns([3, 1])
 with col_s1:
-    h_sil = st.selectbox("Silinecek Hisse:", ["Seçiniz..."] + df["Hisse"].tolist())
-    if h_sil != "Seçiniz..." and st.button("❌ Seçilen Hisseyi Sil"):
-        df = df[df["Hisse"] != h_sil]
+    sil_hisse = st.selectbox("Hisse Seçiniz:", ["-"] + df["Hisse"].tolist())
+with col_s2:
+    if sil_hisse != "-" and st.button("❌ Sil"):
+        df = df[df["Hisse"] != sil_hisse]
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
         st.rerun()
-with col_s2:
-    if st.button("🚨 TÜM VERİLERİ SIFIRLA"):
-        sheet.clear()
-        sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
-        st.rerun()
+
+if st.button("🚨 TÜM VERİLERİ SIFIRLA VE TEMİZLE"):
+    sheet.clear()
+    sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+    st.rerun()
