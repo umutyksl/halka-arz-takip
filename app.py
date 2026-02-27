@@ -23,44 +23,21 @@ def tr_format(val):
     except: 
         return str(val)
 
-# --- TASARIM: ŞEFFAF ARKA PLAN & DİNAMİK RENKLER ---
+# --- TASARIM ---
 st.set_page_config(page_title="Borsa Takip v25", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. KAZANÇ KUTULARI: ŞEFFAF ARKA PLAN */
     div[data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.05) !important; /* Çok hafif bir belirginlik için */
-        border: 2px solid #008000 !important;
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid #444444 !important;
         border-radius: 15px !important;
         padding: 20px !important;
-        box-shadow: none !important;
     }
-    
-    /* 2. METRİK DEĞERLERİ (BÜYÜK RAKAMLAR) */
-    div[data-testid="stMetricValue"] > div {
-        color: #008000 !important;
-        font-size: 40px !important;
-        font-weight: 800 !important;
-    }
-    
-    /* 3. METRİK ETİKETLERİ (BAŞLIKLAR) */
-    div[data-testid="stMetricLabel"] > div > p {
-        color: #cccccc !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-    }
-
-    /* 4. GENEL METİN RENKLERİ */
+    div[data-testid="stMetricValue"] > div { color: #ffffff !important; font-size: 38px !important; font-weight: 800 !important; }
+    div[data-testid="stMetricLabel"] > div > p { color: #cccccc !important; font-size: 14px !important; font-weight: bold !important; }
     h1, h2, h3, p, label, span { color: #ffffff !important; }
-    
-    /* Tablo Görünümü */
     .stDataFrame { background-color: #111111; }
-    
-    /* Sidebar (Yan Menü) Düzenlemesi */
-    [data-testid="stSidebar"] {
-        background-color: #0e1117;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -68,7 +45,7 @@ st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
 if not client: 
-    st.error("Google Sheets bağlantısı kurulamadı. Lütfen Secrets ayarlarını kontrol edin.")
+    st.error("Bağlantı Hatası!")
     st.stop()
 
 # --- VERİ ÇEKME ---
@@ -80,40 +57,43 @@ try:
     else:
         df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
 
-    if "Tur" not in df.columns: 
-        df["Tur"] = "Halka Arz"
-
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
 except:
     df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
 
-# --- ÜST PANEL (METRİKLER) ---
+# --- ÜST PANEL ---
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
 nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
-
 with col1:
-    # Kar durumuna göre otomatik renk (delta_color="normal" pozitifse yeşil yapar)
-    st.metric(
-        label="🎁 TOPLAM HALKA ARZ KAR", 
-        value=f"{tr_format(ha_kar)} TL",
-        delta=f"{tr_format(ha_kar)} TL" if ha_kar != 0 else None,
-        delta_color="normal"
-    )
-
+    st.metric(label="🎁 TOPLAM HALKA ARZ KAR", value=f"{tr_format(ha_kar)} TL")
 with col2:
-    nb_label = "📊 BORSA TOPLAM DURUM"
-    st.metric(
-        label=nb_label, 
-        value=f"{tr_format(nb_kar)} TL",
-        delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None,
-        delta_color="normal"
-    )
+    st.metric(label="📊 BORSA TOPLAM DURUM", value=f"{tr_format(nb_kar)} TL", 
+              delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None)
 
-# --- TABLOLAR ---
+# --- TABLOLAR VE GÜNCELLEME ---
 st.write("---")
+col_t1, col_t2 = st.columns([5, 1])
+with col_t2:
+    if st.button("🔄 Borsa Fiyatlarını Güncelle"):
+        with st.spinner("Sadece .IS uzantılılar güncelleniyor..."):
+            for index, row in df.iterrows():
+                # Sadece sonunda .IS olanları API'den çeker
+                if str(row['Hisse']).endswith(".IS"):
+                    try:
+                        ticker = row['Hisse']
+                        data = yf.Ticker(ticker).history(period="1d")
+                        if not data.empty:
+                            yeni_fiyat = data['Close'].iloc[-1]
+                            df.at[index, 'Satis'] = yeni_fiyat
+                            df.at[index, 'Kar'] = (yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap']
+                    except: continue
+            sheet.clear()
+            sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
+            st.rerun()
+
 tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
 with tab1:
     st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
@@ -124,31 +104,38 @@ with tab2:
 with st.sidebar:
     st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
-    h_adi = st.text_input("Hisse Kodu").upper().strip()
+    h_adi = st.text_input("Hisse Kodu (Örn: GENTS.IS veya BINHO)").upper().strip()
+    
+    anlik_fiyat = 0.0
+    # Sadece .IS ile bitiyorsa otomatik fiyat getir
+    if h_adi.endswith(".IS"):
+        try:
+            with st.spinner("API fiyatı alınıyor..."):
+                hisse_data = yf.Ticker(h_adi).history(period="1d")
+                if not hisse_data.empty:
+                    anlik_fiyat = hisse_data['Close'].iloc[-1]
+                    st.success(f"Güncel: {anlik_fiyat:.2f} TL")
+        except:
+            st.error("Fiyat çekilemedi.")
+
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
-    h_satis = st.number_input("Güncel/Satış Fiyatı", value=0.0, format="%.2f")
+    
+    # API'den fiyat geldiyse onu koy, gelmediyse (veya halka arzsa) manuel girişe bırak
+    h_satis = st.number_input("Güncel/Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
-        # Mevcut hisseyi silip yenisini ekleyerek güncelleme yapıyoruz
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("Başarıyla Kaydedildi!")
-        st.rerun()
-
-    st.write("---")
-    if st.button("🚨 TÜM VERİLERİ SIFIRLA"):
-        sheet.clear()
-        sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+        st.success("İşlem Başarılı!")
         st.rerun()
 
 # --- SİLME ---
 st.write("---")
-st.subheader("🗑️ Kayıt Yönetimi")
 sil_liste = df["Hisse"].tolist()
 if sil_liste:
     s_sec = st.selectbox("Hisse Sil:", ["Seçiniz..."] + sil_liste)
