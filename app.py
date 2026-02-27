@@ -31,7 +31,7 @@ st.markdown("""
     /* 1. KAZANÇ KUTULARI: ŞEFFAF ARKA PLAN */
     div[data-testid="stMetric"] {
         background-color: rgba(255, 255, 255, 0.05) !important; /* Çok hafif bir belirginlik için */
-        border: 2px solid #1b5e20 !important;
+        border: 2px solid #008000 !important;
         border-radius: 15px !important;
         padding: 20px !important;
         box-shadow: none !important;
@@ -39,8 +39,8 @@ st.markdown("""
     
     /* 2. METRİK DEĞERLERİ (BÜYÜK RAKAMLAR) */
     div[data-testid="stMetricValue"] > div {
-        color: #ffffff !important;
-        font-size: 4px !important;
+        color: #008000 !important;
+        font-size: 40px !important;
         font-weight: 800 !important;
     }
     
