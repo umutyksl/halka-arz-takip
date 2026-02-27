@@ -4,7 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import yfinance as yf
 
-# --- GOOGLE BAĞLANTI (v9'daki çalışan yapı) ---
+# --- GOOGLE BAĞLANTI (Senin çalışan kodundaki yapı) ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
 
 def get_client():
@@ -21,31 +21,29 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM: SİYAH ARKA PLAN VE GERÇEK YEŞİL/KIRMIZI ---
-st.set_page_config(page_title="Borsa Portföy v17", layout="wide")
+# --- TASARIM: SİYAH ARKA PLAN & ÖZEL RENKLER ---
+st.set_page_config(page_title="Borsa Takip v18", layout="wide")
 
 st.markdown("""
     <style>
-    /* Tüm sayfa siyah */
     .stApp { background-color: #000000 !important; }
-    
-    /* Metrik Değerlerini ZORLA YEŞİL Yap (Beyaz Yazıya Son) */
+    /* Metrik Değerlerini ZORLA YEŞİL Yap */
     div[data-testid="stMetricValue"] > div {
         color: #00ff00 !important;
         font-size: 50px !important;
         font-weight: bold !important;
     }
-    
-    /* Metrik Kutuları Siyah */
+    /* Zarar Durumunda Delta Kırmızı */
+    div[data-testid="stMetricDelta"] > div {
+        color: #ff3131 !important;
+    }
     div[data-testid="stMetric"] {
         background-color: #111111 !important;
         border: 1px solid #333333 !important;
         border-radius: 10px !important;
         padding: 20px !important;
     }
-
-    /* Yazıları Beyaz Yap */
-    h1, h2, h3, p, label, .stMarkdown { color: #ffffff !important; }
+    h1, h2, h3, p, label, span { color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,7 +52,7 @@ st.title("📟 Borsa Takip Terminali")
 client = get_client()
 if not client: st.stop()
 
-# --- VERİ ÇEKME (v9 Mantığı - Sayılara dokunma) ---
+# --- VERİ ÇEKME ---
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
     all_values = sheet.get_all_values()
@@ -62,11 +60,9 @@ try:
         df = pd.DataFrame(all_values[1:], columns=all_values[0])
     else:
         df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
-
-    # Eğer 'Tur' sütunu yoksa ekle
+    
+    # Sütunları düzelt
     if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
-
-    # Sayıları sayıya çevir (Noktayı silme hatası kaldırıldı)
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
 except:
@@ -79,18 +75,18 @@ with st.sidebar:
     h_adi = st.text_input("Hisse Kodu").upper().strip()
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
-    h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
+    h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=2)
     
-    # Canlı fiyat desteği
+    # Canlı fiyat
     h_satis = st.number_input("Güncel/Satış", value=0.0, format="%.2f")
     if h_tur == "Normal Borsa" and h_adi:
-        if st.button("🔍 Canlı Fiyat Çek"):
+        if st.button("🔍 Canlı Fiyat"):
             try:
                 p = yf.Ticker(f"{h_adi}.IS").fast_info['last_price']
-                st.info(f"Anlık: {p:.2f} TL")
-            except: st.error("Bulunamadı.")
+                st.info(f"Canlı: {p:.2f} TL")
+            except: st.error("Fiyat gelmedi")
 
-    if st.button("💾 Kaydet"):
+    if st.button("✅ Kaydet"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
@@ -104,23 +100,22 @@ nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 c1, c2 = st.columns(2)
 with c1:
-    st.metric("🎁 HALKA ARZ TOPLAM KAR", f"{tr_format(ha_kar)} TL")
+    st.metric("🎁 HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
 with c2:
-    # Zarar durumunda delta kullanarak kırmızı gösterme
-    label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
-    st.metric(label, f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL" if nb_kar < 0 else None, delta_color="inverse")
+    label = "📊 BORSA KAR" if nb_kar >= 0 else "📉 BORSA ZARAR"
+    st.metric(label, f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL" if nb_kar < 0 else None, delta_color="normal")
 
 tab1, tab2 = st.tabs(["🎁 Halka Arz", "💹 Borsa"])
 with tab1:
-    st.dataframe(df[df["Tur"] == "Halka Arz"], use_container_width=True, hide_index=True)
+    st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 with tab2:
-    st.dataframe(df[df["Tur"] == "Normal Borsa"], use_container_width=True, hide_index=True)
+    st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 
 # --- SİLME ---
 st.write("---")
-sil_liste = df["Hisse"].tolist()
-if sil_liste:
-    secilen = st.selectbox("Silinecek Hisse:", sil_liste)
+h_liste = df["Hisse"].tolist()
+if h_liste:
+    secilen = st.selectbox("Silinecek Hisse:", h_liste)
     if st.button("❌ Sil"):
         df = df[df["Hisse"] != secilen]
         sheet.clear()
