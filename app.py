@@ -22,59 +22,77 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM ---
-st.set_page_config(page_title="Borsa Pro Terminal v12", layout="wide")
+# --- TASARIM (SADE YEŞİL/KIRMIZI & SİYAH TEMA) ---
+st.set_page_config(page_title="Borsa Portföy v13", layout="wide")
+
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: white; }
-    [data-testid='stMetricValue'] { color: #00ff41 !important; font-size: 50px !important; text-shadow: 0 0 10px #00ff41; }
-    .stMetric { background-color: #161b22 !important; border: 1px solid #30363d !important; border-radius: 10px; padding: 20px; }
-    h1, h2, h3, p { color: white !important; }
+    .stApp { background-color: #0b0d11; color: #e1e1e1; }
+    /* Metrik kutuları ve renkleri */
+    [data-testid='stMetricValue'] { font-size: 45px !important; font-weight: bold !important; }
+    .stMetric { background-color: #1a1d23 !important; border: 1px solid #2d3139 !important; border-radius: 12px; padding: 20px; }
+    
+    /* Pozitif Kar (Yeşil) - Parlama yok */
+    [data-testid='stMetricValue'] { color: #00c853 !important; }
+    
+    /* Negatif Zarar Durumu için alt yazı rengi */
+    [data-testid='stMetricDelta'] > div { color: #ff1744 !important; }
+    
+    h1, h2, h3, p, span { color: white !important; }
+    .stTabs [data-baseweb="tab-list"] { background-color: #0b0d11; }
     </style>
     """, unsafe_allow_html=True)
 
 client = get_client()
 if not client: st.stop()
 
-# --- VERİ ÇEKME VE SÜTUN KONTROLÜ (KRİTİK BÖLGE) ---
+# --- VERİ ÇEKME VE AKILLI TEMİZLİK ---
 sheet = client.open_by_key(SHEET_ID).sheet1
 all_data = sheet.get_all_records()
 df = pd.DataFrame(all_data)
 
-# Eğer tablo boşsa veya "Tur" sütunu yoksa güvenli hale getir
 if df.empty:
     df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
-elif "Tur" not in df.columns:
-    # ESKİ VERİLERİ KURTARMA: Eğer sütun yoksa ekle ve hepsini Halka Arz yap
-    df["Tur"] = "Halka Arz"
+else:
+    if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
+    
+    # Sayısal alanları temizle
+    for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
+        df[col] = df[col].astype(str).str.replace(".", "").str.replace(",", ".")
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-# Sayısal alanları temizle
-for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
-    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    # ⚠️ 760 BİN TL HATASINI DÜZELTEN MEKANİZMA
+    # Halka arzlarda tek hissede 50.000 TL kar imkansızdır, varsa 100'e böl.
+    mask = (df["Tur"] == "Halka Arz") & (df["Kar"] > 50000)
+    if mask.any():
+        df.loc[mask, "Kar"] = df.loc[mask, "Kar"] / 100
+        # Tabloyu Google'da da düzelt
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
 
-# --- CANLI FİYAT FONKSİYONU ---
+# --- CANLI FİYAT ---
 def get_live_price(symbol, tur):
     if tur == "Normal Borsa" and symbol:
         try:
             ticker = symbol if "." in symbol else f"{symbol}.IS"
-            info = yf.Ticker(ticker).fast_info
-            return round(info['last_price'], 2)
+            price = yf.Ticker(ticker).fast_info['last_price']
+            return round(price, 2)
         except: return None
     return None
 
 # --- YAN MENÜ ---
 with st.sidebar:
-    st.header("🏢 İşlem Merkezi")
-    h_tur = st.radio("Tür", ["Halka Arz", "Normal Borsa"])
-    h_adi = st.text_input("Hisse Kodu (Örn: THYAO)").upper().strip()
+    st.header("🛒 Yeni İşlem Ekle")
+    h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
+    h_adi = st.text_input("Hisse Kodu").upper().strip()
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
-    h_lot = st.number_input("Lot (Adet)", value=0)
+    h_lot = st.number_input("Lot Sayısı", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
     
     live_p = get_live_price(h_adi, h_tur)
-    h_satis = st.number_input("Satış/Güncel Fiyat", value=live_p if live_p else 0.0, format="%.2f")
+    h_satis = st.number_input("Satış / Güncel Fiyat", value=live_p if live_p else 0.0, format="%.2f")
     
-    if st.button("💾 Portföye Ekle"):
+    if st.button("➕ Portföye Kaydet"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
@@ -84,18 +102,20 @@ with st.sidebar:
         st.rerun()
 
 # --- ANA EKRAN ---
-st.title("📟 Finansal Takip Terminali")
+st.title("📟 Borsa Takip Terminali")
 
 c1, c2 = st.columns(2)
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
 nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 with c1:
-    st.metric("🎁 HALKA ARZ TOPLAM", f"{tr_format(ha_kar)} TL")
+    st.metric("🎁 HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
 with c2:
-    st.metric("📊 BORSA KAR/ZARAR", f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL")
+    # Zarar durumunda kırmızı gösterir
+    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
+    st.metric(nb_label, f"{tr_format(nb_kar)} TL")
 
-tab1, tab2 = st.tabs(["📁 Halka Arz Portföyü", "📈 Canlı Takip (Borsa)"])
+tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "💹 Normal Hisselerim"])
 
 with tab1:
     st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
@@ -103,17 +123,19 @@ with tab1:
 with tab2:
     st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 
-# --- SİLME BÖLGESİ ---
+# --- SİLME VE SIFIRLAMA ---
 st.write("---")
-st.subheader("🗑️ Kayıt Yönetimi")
-sil_secenek = df["Hisse"].tolist()
-if sil_secenek:
-    col_d1, col_d2 = st.columns([3, 1])
-    with col_d1:
-        h_sil = st.selectbox("Silinecek Hisse:", sil_secenek)
-    with col_d2:
-        if st.button("❌ Seçileni Sil"):
-            df = df[df["Hisse"] != h_sil]
-            sheet.clear()
-            sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-            st.rerun()
+st.subheader("⚙️ Veri Yönetimi")
+col_s1, col_s2 = st.columns([2, 1])
+with col_s1:
+    h_sil = st.selectbox("Silinecek Hisse:", ["Seçiniz..."] + df["Hisse"].tolist())
+    if h_sil != "Seçiniz..." and st.button("❌ Seçilen Hisseyi Sil"):
+        df = df[df["Hisse"] != h_sil]
+        sheet.clear()
+        sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
+        st.rerun()
+with col_s2:
+    if st.button("🚨 TÜM VERİLERİ SIFIRLA"):
+        sheet.clear()
+        sheet.append_row(["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+        st.rerun()
