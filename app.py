@@ -14,59 +14,62 @@ def get_client():
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         return gspread.authorize(Credentials.from_service_account_info(creds_info, scopes=scopes))
-    except: return None
+    except: 
+        return None
 
 def tr_format(val):
     try:
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
-    except: return str(val)
+    except: 
+        return str(val)
 
-# --- TASARIM: SİYAH ARKA PLAN & BEYAZ KUTU ÜZERİNE GÖRÜNÜR YAZILAR ---
+# --- TASARIM: ŞEFFAF ARKA PLAN & DİNAMİK RENKLER ---
 st.set_page_config(page_title="Borsa Takip v25", layout="wide")
 
 st.markdown("""
     <style>
-   
-    
-    /* 2. KAZANÇ KUTULARI: BEMBEYAZ */
+    /* 1. KAZANÇ KUTULARI: ŞEFFAF ARKA PLAN */
     div[data-testid="stMetric"] {
-        background-color: #ffffff !important;
-        border: 2px solid #2e7d32 !important;
+        background-color: rgba(255, 255, 255, 0.05) !important; /* Çok hafif bir belirginlik için */
+        border: 1px solid #444444 !important;
         border-radius: 15px !important;
         padding: 20px !important;
-        box-shadow: 0 4px 15px rgba(255,255,255,0.1) !important;
+        box-shadow: none !important;
     }
     
-    /* 3. KUTU İÇİNDEKİ RAKAMLAR: KOYU YEŞİL (Beyazda görünmesi için) */
+    /* 2. METRİK DEĞERLERİ (BÜYÜK RAKAMLAR) */
     div[data-testid="stMetricValue"] > div {
-        color: #2e7d32 !important;
-        font-size: 46px !important;
-        font-weight: 900 !important;
-        display: block !important;
-        visibility: visible !important;
+        color: #ffffff !important;
+        font-size: 40px !important;
+        font-weight: 800 !important;
     }
     
-    /* 4. KUTU BAŞLIKLARI: SAF SİYAH */
+    /* 3. METRİK ETİKETLERİ (BAŞLIKLAR) */
     div[data-testid="stMetricLabel"] > div > p {
-        color: #000000 !important;
+        color: #cccccc !important;
         font-size: 16px !important;
         font-weight: bold !important;
-        display: block !important;
-        visibility: visible !important;
     }
 
-    /* 5. GENEL YAZILAR VE TABLO BAŞLIKLARI: BEYAZ */
+    /* 4. GENEL METİN RENKLERİ */
     h1, h2, h3, p, label, span { color: #ffffff !important; }
     
-    /* Tablo Tasarımı */
+    /* Tablo Görünümü */
     .stDataFrame { background-color: #111111; }
+    
+    /* Sidebar (Yan Menü) Düzenlemesi */
+    [data-testid="stSidebar"] {
+        background-color: #0e1117;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
-if not client: st.stop()
+if not client: 
+    st.error("Google Sheets bağlantısı kurulamadı. Lütfen Secrets ayarlarını kontrol edin.")
+    st.stop()
 
 # --- VERİ ÇEKME ---
 try:
@@ -77,7 +80,8 @@ try:
     else:
         df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
 
-    if "Tur" not in df.columns: df["Tur"] = "Halka Arz"
+    if "Tur" not in df.columns: 
+        df["Tur"] = "Halka Arz"
 
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
@@ -89,11 +93,24 @@ ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
 nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
+
 with col1:
-    st.metric("🎁 TOPLAM HALKA ARZ KAR", f"{tr_format(ha_kar)} TL")
+    # Kar durumuna göre otomatik renk (delta_color="normal" pozitifse yeşil yapar)
+    st.metric(
+        label="🎁 TOPLAM HALKA ARZ KAR", 
+        value=f"{tr_format(ha_kar)} TL",
+        delta=f"{tr_format(ha_kar)} TL" if ha_kar != 0 else None,
+        delta_color="normal"
+    )
+
 with col2:
-    nb_label = "📉 BORSA ZARAR" if nb_kar < 0 else "📊 BORSA KAR"
-    st.metric(nb_label, f"{tr_format(nb_kar)} TL")
+    nb_label = "📊 BORSA TOPLAM DURUM"
+    st.metric(
+        label=nb_label, 
+        value=f"{tr_format(nb_kar)} TL",
+        delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None,
+        delta_color="normal"
+    )
 
 # --- TABLOLAR ---
 st.write("---")
@@ -116,6 +133,7 @@ with st.sidebar:
     if st.button("🚀 Kaydet ve Yedekle"):
         kar = (h_satis - h_alis) * h_lot * h_hesap
         yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
+        # Mevcut hisseyi silip yenisini ekleyerek güncelleme yapıyoruz
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
