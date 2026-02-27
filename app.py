@@ -22,7 +22,7 @@ def tr_format(val):
     except: return str(val)
 
 # --- TASARIM ---
-st.set_page_config(page_title="Borsa Takip v26", layout="wide")
+st.set_page_config(page_title="Borsa Takip v28", layout="wide")
 st.markdown("""
     <style>
     div[data-testid="stMetric"] { background-color: rgba(255, 255, 255, 0.05) !important; border: 1px solid #444444 !important; border-radius: 15px !important; padding: 20px !important; }
@@ -42,17 +42,26 @@ if not client: st.stop()
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
     all_values = sheet.get_all_values()
+    
+    # Senin tablondaki başlıklarla birebir eşleşme
+    expected_cols = ["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur", "Durum"]
+    
     if len(all_values) > 1:
         df = pd.DataFrame(all_values[1:], columns=all_values[0])
+        # Eksik kolon varsa (Durum veya Tur gibi) otomatik ekle
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = "Halka Arz" if col == "Tur" else ("Satıldı" if col == "Durum" else 0)
+        df = df[expected_cols]
     else:
-        df = pd.DataFrame(columns=["Hisse", "Alis", "Fiyat", "Lot", "Hesap", "Kar", "Tur", "Durum"])
+        df = pd.DataFrame(columns=expected_cols)
 
-    if "Durum" not in df.columns: df["Durum"] = "Aktif"
-    
-    for col in ["Alis", "Fiyat", "Lot", "Hesap", "Kar"]:
+    # Sayısal alanları temizle ve dönüştür
+    for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
-except:
-    df = pd.DataFrame(columns=["Hisse", "Alis", "Fiyat", "Lot", "Hesap", "Kar", "Tur", "Durum"])
+except Exception as e:
+    st.error(f"Hata: {e}")
+    df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur", "Durum"])
 
 # --- ÜST PANEL ---
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
@@ -62,18 +71,18 @@ col1, col2 = st.columns(2)
 with col1: st.metric(label="🎁 TOPLAM HALKA ARZ KAR", value=f"{tr_format(ha_kar)} TL")
 with col2: st.metric(label="📊 BORSA TOPLAM DURUM", value=f"{tr_format(nb_kar)} TL", delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None)
 
-# --- TABLOLAR VE GÜNCELLEME ---
+# --- TABLOLAR ---
 st.write("---")
-if st.button("🔄 Aktif Borsa Fiyatlarını Güncelle"):
-    with st.spinner("Sadece 'Aktif' hisseler güncelleniyor..."):
+# Güncelleme butonu: Sadece 'Aktif' ve '.IS' olanları günceller, senin listedeki #PAHOL vb. dokunmaz.
+if st.button("🔄 Aktif Fiyatları Güncelle"):
+    with st.spinner("Güncelleniyor..."):
         for index, row in df.iterrows():
-            # Sadece Aktif olan ve .IS ile bitenleri güncelle
-            if row['Durum'] == "Aktif" and str(row['Hisse']).endswith(".IS"):
+            if str(row['Durum']) == "Aktif" and str(row['Hisse']).endswith(".IS"):
                 try:
                     data = yf.Ticker(row['Hisse']).history(period="1d")
                     if not data.empty:
                         yeni_fiyat = data['Close'].iloc[-1]
-                        df.at[index, 'Fiyat'] = yeni_fiyat
+                        df.at[index, 'Satis'] = yeni_fiyat
                         df.at[index, 'Kar'] = (yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap']
                 except: continue
         sheet.clear()
@@ -89,7 +98,7 @@ with st.sidebar:
     st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_durum = st.selectbox("İşlem Durumu", ["Aktif", "Satıldı"])
-    h_adi = st.text_input("Hisse Kodu").upper().strip()
+    h_adi = st.text_input("Hisse Kodu (Örn: GENTS.IS)").upper().strip()
     
     anlik_fiyat = 0.0
     if h_adi.endswith(".IS") and h_durum == "Aktif":
@@ -97,19 +106,18 @@ with st.sidebar:
             h_data = yf.Ticker(h_adi).history(period="1d")
             if not h_data.empty:
                 anlik_fiyat = h_data['Close'].iloc[-1]
-                st.success(f"Anlık: {anlik_fiyat:.2f} TL")
+                st.success(f"Piyasa: {anlik_fiyat:.2f} TL")
         except: pass
 
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
-    
-    fiyat_label = "Satış Fiyatı" if h_durum == "Satıldı" else "Güncel Fiyat"
-    h_fiyat = st.number_input(fiyat_label, value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
+    h_satis = st.number_input("Güncel / Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
-        kar = (h_fiyat - h_alis) * h_lot * h_hesap
-        yeni = {"Hisse": h_adi, "Alis": h_alis, "Fiyat": h_fiyat, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur, "Durum": h_durum}
+        # Kar hesapla (Senin Sheets'teki formatına uygun)
+        kar = (h_satis - h_alis) * h_lot * h_hesap
+        yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur, "Durum": h_durum}
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
