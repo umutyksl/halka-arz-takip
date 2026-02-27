@@ -53,14 +53,17 @@ try:
     sheet = client.open_by_key(SHEET_ID).sheet1
     all_values = sheet.get_all_values()
     if len(all_values) > 1:
+        # Satis yerine Guncel kolonunu kullanıyoruz
         df = pd.DataFrame(all_values[1:], columns=all_values[0])
+        if "Satis" in df.columns:
+            df.rename(columns={"Satis": "Guncel"}, inplace=True)
     else:
-        df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+        df = pd.DataFrame(columns=["Hisse", "Alis", "Guncel", "Lot", "Hesap", "Kar", "Tur"])
 
-    for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
+    for col in ["Alis", "Guncel", "Lot", "Hesap", "Kar"]:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "."), errors='coerce').fillna(0)
 except:
-    df = pd.DataFrame(columns=["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar", "Tur"])
+    df = pd.DataFrame(columns=["Hisse", "Alis", "Guncel", "Lot", "Hesap", "Kar", "Tur"])
 
 # --- ÜST PANEL ---
 ha_kar = df[df["Tur"] == "Halka Arz"]["Kar"].sum()
@@ -77,68 +80,68 @@ with col2:
 st.write("---")
 col_t1, col_t2 = st.columns([5, 1])
 with col_t2:
-    if st.button("🔄 Borsa Fiyatlarını Güncelle"):
-        with st.spinner("Sadece .IS uzantılılar güncelleniyor..."):
+    if st.button("🔄 Fiyatları Güncelle"):
+        with st.spinner("Güncelleniyor..."):
             for index, row in df.iterrows():
-                # Sadece sonunda .IS olanları API'den çeker
                 if str(row['Hisse']).endswith(".IS"):
                     try:
                         ticker = row['Hisse']
                         data = yf.Ticker(ticker).history(period="1d")
                         if not data.empty:
                             yeni_fiyat = data['Close'].iloc[-1]
-                            df.at[index, 'Satis'] = yeni_fiyat
+                            df.at[index, 'Guncel'] = yeni_fiyat
                             df.at[index, 'Kar'] = (yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap']
                     except: continue
             sheet.clear()
+            # Kolon isimlerini Google Sheets'e geri yazarken Guncel olarak gönderir
             sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
             st.rerun()
 
 tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
+# Tablo başlıklarında Guncel olarak görünecek
 with tab1:
-    st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
+    st.dataframe(df[df["Tur"] == "Halka Arz"][["Hisse", "Alis", "Guncel", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 with tab2:
-    st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Satis", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
+    st.dataframe(df[df["Tur"] == "Normal Borsa"][["Hisse", "Alis", "Guncel", "Lot", "Hesap", "Kar"]], use_container_width=True, hide_index=True)
 
 # --- YAN MENÜ ---
 with st.sidebar:
     st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
-    h_adi = st.text_input("Hisse Kodu (Örn: GENTS.IS veya BINHO)").upper().strip()
+    h_adi = st.text_input("Hisse Kodu (Örn: GENTS.IS)").upper().strip()
     
     anlik_fiyat = 0.0
-    # Sadece .IS ile bitiyorsa otomatik fiyat getir
     if h_adi.endswith(".IS"):
         try:
-            with st.spinner("API fiyatı alınıyor..."):
+            with st.spinner("Fiyat alınıyor..."):
                 hisse_data = yf.Ticker(h_adi).history(period="1d")
                 if not hisse_data.empty:
                     anlik_fiyat = hisse_data['Close'].iloc[-1]
-                    st.success(f"Güncel: {anlik_fiyat:.2f} TL")
+                    st.success(f"Piyasa: {anlik_fiyat:.2f} TL")
         except:
             st.error("Fiyat çekilemedi.")
 
-    h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
-    h_lot = st.number_input("Lot", value=0)
+    h_alis = st.number_input("Alış Fiyatı (Maliyet)", value=0.0, format="%.2f")
+    h_lot = st.number_input("Lot Miktarı", value=0)
     h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
     
-    # API'den fiyat geldiyse onu koy, gelmediyse (veya halka arzsa) manuel girişe bırak
-    h_satis = st.number_input("Güncel/Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
+    # İsmi Güncel Fiyat olarak değiştirdik
+    h_guncel = st.number_input("Güncel Fiyat / Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
-        kar = (h_satis - h_alis) * h_lot * h_hesap
-        yeni = {"Hisse": h_adi, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
+        kar = (h_guncel - h_alis) * h_lot * h_hesap
+        yeni = {"Hisse": h_adi, "Alis": h_alis, "Guncel": h_guncel, "Lot": h_lot, "Hesap": h_hesap, "Kar": kar, "Tur": h_tur}
         df = pd.concat([df[df["Hisse"] != h_adi], pd.DataFrame([yeni])], ignore_index=True)
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("İşlem Başarılı!")
+        st.success("Veri Güncellendi!")
         st.rerun()
 
 # --- SİLME ---
 st.write("---")
 sil_liste = df["Hisse"].tolist()
 if sil_liste:
-    s_sec = st.selectbox("Hisse Sil:", ["Seçiniz..."] + sil_liste)
+    s_sec = st.selectbox("Kayıt Sil:", ["Seçiniz..."] + sil_liste)
     if s_sec != "Seçiniz..." and st.button("❌ Seçilen Kaydı Sil"):
         df = df[df["Hisse"] != s_sec]
         sheet.clear()
