@@ -21,37 +21,36 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM (2PX BORDER VE DİNAMİK RENKLER) ---
-st.set_page_config(page_title="Borsa Takip v33", layout="wide")
+# --- TASARIM (GARANTİ METİN KONTROLÜ MANTIĞI) ---
+st.set_page_config(page_title="Borsa Takip v34", layout="wide")
 
 st.markdown("""
     <style>
-    /* 1. KAZANÇ KUTULARI GENEL YAPISI */
+    /* GENEL KUTU YAPISI */
     div[data-testid="stMetric"] {
         background-color: rgba(255, 255, 255, 0.05) !important;
         border-radius: 15px !important;
         padding: 20px !important;
-        border: 2px solid #444444 !important; /* Varsayılan 2px gri çerçeve */
         transition: all 0.3s ease;
     }
 
-    /* 2. ZARAR DURUMU: ÇERÇEVE VE YAZI KIRMIZI */
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="down"]) {
+    /* 1. ZARAR DURUMU: EĞER "-" İŞARETİ VARSA KIRMIZI YAP */
+    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) {
         border: 2px solid #ff4b4b !important;
     }
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="down"]) div[data-testid="stMetricValue"] > div {
+    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) div[data-testid="stMetricValue"] > div {
         color: #ff4b4b !important;
     }
 
-    /* 3. KAR DURUMU: ÇERÇEVE VE YAZI YEŞİL */
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="up"]) {
+    /* 2. KAR DURUMU: EĞER "-" İŞARETİ YOKSA YEŞİL YAP */
+    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) {
         border: 2px solid #09ab3b !important;
     }
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricDelta"] > div[data-trend="up"]) div[data-testid="stMetricValue"] > div {
+    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) div[data-testid="stMetricValue"] > div {
         color: #09ab3b !important;
     }
 
-    /* 4. METİN DÜZENLEMELERİ */
+    /* METİN AYARLARI */
     div[data-testid="stMetricValue"] > div { font-size: 38px !important; font-weight: 800 !important; }
     div[data-testid="stMetricLabel"] > div > p { color: #cccccc !important; font-size: 14px !important; font-weight: bold !important; }
     
@@ -103,10 +102,10 @@ with col2:
         delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None
     )
 
-# --- TABLOLAR VE GÜNCELLEME ---
+# --- TABLOLAR ---
 st.write("---")
 if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
-    with st.spinner("Veriler güncelleniyor..."):
+    with st.spinner("Güncelleniyor..."):
         for index, row in df.iterrows():
             clean_name = str(row['Hisse']).replace("#", "").strip()
             if str(row['Durum']) == "Aktif" and clean_name.endswith(".IS"):
@@ -119,7 +118,6 @@ if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
                 except: continue
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.success("Güncellendi!")
         st.rerun()
 
 tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
@@ -140,7 +138,7 @@ with st.sidebar:
             h_data = yf.Ticker(h_adi_clean).history(period="1d")
             if not h_data.empty:
                 anlik_fiyat = h_data['Close'].iloc[-1]
-                st.success(f"Piyasa: {anlik_fiyat:.2f} TL")
+                st.success(f"Anlık: {anlik_fiyat:.2f}")
         except: pass
 
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
@@ -161,8 +159,8 @@ with st.sidebar:
 st.write("---")
 sil_liste = df["Hisse"].tolist()
 if sil_liste:
-    s_sec = st.selectbox("Kayıt Sil:", ["Seçiniz..."] + sil_liste)
-    if s_sec != "Seçiniz..." and st.button("❌ Sil"):
+    s_sec = st.selectbox("Hisse Sil:", ["Seçiniz..."] + sil_liste)
+    if s_sec != "Seçiniz..." and st.button("❌ Kaydı Sil"):
         df = df[df["Hisse"] != s_sec]
         sheet.clear()
         sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
