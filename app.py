@@ -33,15 +33,13 @@ def update_google_sheet(sheet, dataframe):
             
         data_list = [df_to_upload.columns.values.tolist()] + df_to_upload.values.tolist()
         
-        sheet.clear()
         time.sleep(0.5) # API'nin nefes alması için kısa bir bekleme
         # Yeni gspread versiyonları için doğru kullanım:
-        sheet.update(range_name='A1', values=data_list, value_input_option='RAW')
+        sheet.update(values=data_list, range_name='A1', value_input_option='RAW')
         return True
     except Exception as e:
         st.error(f"Google Sheets Güncelleme Hatası: {e}")
         return False
-
 # --- TASARIM (DEĞİŞTİRİLMEDİ) ---
 st.set_page_config(page_title="Borsa Takip v34", layout="wide")
 
