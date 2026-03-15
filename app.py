@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import yfinance as yf
+import time  # Kota hatalarını önlemek için eklendi
 
 # --- GOOGLE BAĞLANTI AYARLARI ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
@@ -21,39 +22,38 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- TASARIM (GARANTİ METİN KONTROLÜ MANTIĞI) ---
+# --- VERİ YAZMA FONKSİYONU (HATA ÖNLEYİCİ) ---
+def update_google_sheet(sheet, dataframe):
+    """Veriyi Google Sheets'e güvenli bir şekilde yazar."""
+    try:
+        # Sayısal değerleri string'e çevirerek API hatalarını önle
+        df_to_upload = dataframe.copy()
+        for col in df_to_upload.columns:
+            df_to_upload[col] = df_to_upload[col].astype(str)
+            
+        data_list = [df_to_upload.columns.values.tolist()] + df_to_upload.values.tolist()
+        
+        sheet.clear()
+        time.sleep(0.5) # API'nin nefes alması için kısa bir bekleme
+        # Yeni gspread versiyonları için doğru kullanım:
+        sheet.update(range_name='A1', values=data_list, value_input_option='RAW')
+        return True
+    except Exception as e:
+        st.error(f"Google Sheets Güncelleme Hatası: {e}")
+        return False
+
+# --- TASARIM (DEĞİŞTİRİLMEDİ) ---
 st.set_page_config(page_title="Borsa Takip v34", layout="wide")
 
 st.markdown("""
     <style>
-    /* GENEL KUTU YAPISI */
-    div[data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border-radius: 15px !important;
-        padding: 20px !important;
-        transition: all 0.3s ease;
-    }
-
-    /* 1. ZARAR DURUMU: EĞER "-" İŞARETİ VARSA KIRMIZI YAP */
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) {
-        border: 2px solid #ff4b4b !important;
-    }
-    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) div[data-testid="stMetricValue"] > div {
-        color: #ff4b4b !important;
-    }
-
-    /* 2. KAR DURUMU: EĞER "-" İŞARETİ YOKSA YEŞİL YAP */
-    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) {
-        border: 2px solid #09ab3b !important;
-    }
-    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) div[data-testid="stMetricValue"] > div {
-        color: #09ab3b !important;
-    }
-
-    /* METİN AYARLARI */
+    div[data-testid="stMetric"] { background-color: rgba(255, 255, 255, 0.05) !important; border-radius: 15px !important; padding: 20px !important; transition: all 0.3s ease; }
+    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) { border: 2px solid #ff4b4b !important; }
+    div[data-testid="stMetric"]:has(div[data-testid="stMetricValue"]:contains("-")) div[data-testid="stMetricValue"] > div { color: #ff4b4b !important; }
+    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) { border: 2px solid #09ab3b !important; }
+    div[data-testid="stMetric"]:not(:has(div[data-testid="stMetricValue"]:contains("-"))) div[data-testid="stMetricValue"] > div { color: #09ab3b !important; }
     div[data-testid="stMetricValue"] > div { font-size: 38px !important; font-weight: 800 !important; }
     div[data-testid="stMetricLabel"] > div > p { color: #cccccc !important; font-size: 14px !important; font-weight: bold !important; }
-    
     h1, h2, h3, p, label, span { color: #ffffff !important; }
     .stDataFrame { background-color: #111111; }
     </style>
@@ -62,7 +62,9 @@ st.markdown("""
 st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
-if not client: st.stop()
+if not client: 
+    st.error("Google Sheets bağlantısı kurulamadı. Secrets ayarlarını kontrol edin.")
+    st.stop()
 
 # --- VERİ ÇEKME ---
 try:
@@ -79,7 +81,9 @@ try:
         df = pd.DataFrame(columns=expected_cols)
 
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
-        df[col] = pd.to_numeric(df[col].astype(str).str.replace(".", "").str.replace(",", "."), errors='coerce').fillna(0)
+        # Verileri temizle ve sayıya çevir
+        df[col] = df[col].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 except Exception as e:
     st.error(f"Veri yükleme hatası: {e}")
     df = pd.DataFrame(columns=expected_cols)
@@ -90,19 +94,11 @@ nb_kar = df[df["Tur"] == "Normal Borsa"]["Kar"].sum()
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric(
-        label="🎁 TOPLAM HALKA ARZ KAR", 
-        value=f"{tr_format(ha_kar)} TL",
-        delta=f"{tr_format(ha_kar)} TL" if ha_kar != 0 else None
-    )
+    st.metric(label="🎁 TOPLAM HALKA ARZ KAR", value=f"{tr_format(ha_kar)} TL")
 with col2:
-    st.metric(
-        label="📊 BORSA TOPLAM DURUM", 
-        value=f"{tr_format(nb_kar)} TL", 
-        delta=f"{tr_format(nb_kar)} TL" if nb_kar != 0 else None
-    )
+    st.metric(label="📊 BORSA TOPLAM DURUM", value=f"{tr_format(nb_kar)} TL")
 
-# --- TABLOLAR ---
+# --- TABLOLAR VE API GÜNCELLEME ---
 st.write("---")
 if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
     with st.spinner("Güncelleniyor..."):
@@ -116,9 +112,9 @@ if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
                         df.at[index, 'Satis'] = yeni_fiyat
                         df.at[index, 'Kar'] = (yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap']
                 except: continue
-        sheet.clear()
-        sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.rerun()
+        if update_google_sheet(sheet, df):
+            st.success("Tüm fiyatlar güncellendi!")
+            st.rerun()
 
 tab1, tab2 = st.tabs(["💎 Halka Arzlarım", "📈 Borsa Takibi"])
 with tab1: st.dataframe(df[df["Tur"] == "Halka Arz"], use_container_width=True, hide_index=True)
@@ -129,7 +125,7 @@ with st.sidebar:
     st.header("⚙️ İşlem Merkezi")
     h_tur = st.radio("Kategori", ["Halka Arz", "Normal Borsa"])
     h_durum = st.selectbox("İşlem Durumu", ["Aktif", "Satıldı"])
-    h_adi_raw = st.text_input("Hisse Kodu").upper().strip()
+    h_adi_raw = st.text_input("Hisse Kodu (Örn: THYAO.IS)").upper().strip()
     
     h_adi_clean = h_adi_raw.replace("#", "")
     anlik_fiyat = 0.0
@@ -143,17 +139,19 @@ with st.sidebar:
 
     h_alis = st.number_input("Alış Fiyatı", value=0.0, format="%.2f")
     h_lot = st.number_input("Lot", value=0)
-    h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4], index=0)
+    h_hesap = st.selectbox("Hesap Sayısı", [1, 2, 3, 4, 5, 10], index=0)
     h_satis = st.number_input("Güncel / Satış Fiyatı", value=anlik_fiyat if anlik_fiyat > 0 else 0.0, format="%.2f")
 
     if st.button("🚀 Kaydet ve Yedekle"):
         if h_adi_raw != "":
             yeni_kar = (h_satis - h_alis) * h_lot * h_hesap
             yeni_veri = {"Hisse": h_adi_raw, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar, "Tur": h_tur, "Durum": h_durum}
+            
+            # Eski kaydı varsa sil, yenisini ekle
             df = pd.concat([df[df["Hisse"] != h_adi_raw], pd.DataFrame([yeni_veri])], ignore_index=True)
-            sheet.clear()
-            sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-            st.rerun()
+            
+            if update_google_sheet(sheet, df):
+                st.rerun()
 
 # --- SİLME ---
 st.write("---")
@@ -162,6 +160,5 @@ if sil_liste:
     s_sec = st.selectbox("Hisse Sil:", ["Seçiniz..."] + sil_liste)
     if s_sec != "Seçiniz..." and st.button("❌ Kaydı Sil"):
         df = df[df["Hisse"] != s_sec]
-        sheet.clear()
-        sheet.update([df.columns.values.tolist()] + df.values.tolist(), value_input_option='RAW')
-        st.rerun()
+        if update_google_sheet(sheet, df):
+            st.rerun()
