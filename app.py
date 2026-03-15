@@ -62,9 +62,10 @@ st.markdown("""
 st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
-if not client: 
-    st.error("Google Sheets bağlantısı kurulamadı. Secrets ayarlarını kontrol edin.")
-    st.stop()
+# --- ŞU SATIRI EKLE ---
+st.info(f"Lütfen bu adresi Google Sheet'ten 'Düzenleyici' olarak ekle: {dict(st.secrets['gcp_service_account']).get('client_email')}")
+# ----------------------
+if not client: st.stop()
 
 # --- VERİ ÇEKME ---
 try:
