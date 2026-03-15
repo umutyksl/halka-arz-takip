@@ -8,6 +8,15 @@ import time  # Kota hatalarını önlemek için eklendi
 # --- GOOGLE BAĞLANTI AYARLARI ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
 
+# --- E-POSTA ADRESİNİ BULMA KODU (GEÇİCİ) ---
+import streamlit as st
+if "gcp_service_account" in st.secrets:
+    mail = st.secrets["gcp_service_account"]["client_email"]
+    st.error(f"Kopyalaman gereken e-posta: {mail}")
+else:
+    st.warning("Secrets içinde 'gcp_service_account' bulunamadı!")
+# -------------------------------------------
+
 def get_client():
     try:
         creds_info = dict(st.secrets["gcp_service_account"])
