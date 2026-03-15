@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import yfinance as yf
-import time  # Kota hatalarını önlemek için eklendi
+import time
 
 # --- GOOGLE BAĞLANTI AYARLARI ---
 SHEET_ID = "16EPbOhnGAqFYqiFOrHXfJUpCKVO5wugkoP1f_49rcF4"
@@ -22,25 +22,28 @@ def tr_format(val):
         return "{:,.2f}".format(float(val)).replace(",", "X").replace(".", ",").replace("X", ".")
     except: return str(val)
 
-# --- VERİ YAZMA FONKSİYONU (HATA ÖNLEYİCİ) ---
+# --- VERİ YAZMA FONKSİYONU ---
 def update_google_sheet(sheet, dataframe):
-    """Veriyi Google Sheets'e güvenli bir şekilde yazar."""
     try:
-        # Sayısal değerleri string'e çevirerek API hatalarını önle
         df_to_upload = dataframe.copy()
+        # Kaydetmeden önce tüm sayıları 2 basamağa yuvarla (Garanti olsun)
+        for col in ["Alis", "Satis", "Kar"]:
+            if col in df_to_upload.columns:
+                df_to_upload[col] = pd.to_numeric(df_to_upload[col]).round(2)
+        
         for col in df_to_upload.columns:
             df_to_upload[col] = df_to_upload[col].astype(str)
             
         data_list = [df_to_upload.columns.values.tolist()] + df_to_upload.values.tolist()
         
-        time.sleep(0.5) # API'nin nefes alması için kısa bir bekleme
-        # Yeni gspread versiyonları için doğru kullanım:
+        time.sleep(0.5)
         sheet.update(values=data_list, range_name='A1', value_input_option='RAW')
         return True
     except Exception as e:
         st.error(f"Google Sheets Güncelleme Hatası: {e}")
         return False
-# --- TASARIM (DEĞİŞTİRİLMEDİ) ---
+
+# --- TASARIM ---
 st.set_page_config(page_title="Borsa Takip v34", layout="wide")
 
 st.markdown("""
@@ -60,7 +63,6 @@ st.markdown("""
 st.title("💹 Portföy Yönetim Terminali")
 
 client = get_client()
-# ----------------------
 if not client: st.stop()
 
 # --- VERİ ÇEKME ---
@@ -78,7 +80,6 @@ try:
         df = pd.DataFrame(columns=expected_cols)
 
     for col in ["Alis", "Satis", "Lot", "Hesap", "Kar"]:
-        # Verileri temizle ve sayıya çevir
         df[col] = df[col].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 except Exception as e:
@@ -106,8 +107,9 @@ if st.button("🔄 Tüm Fiyatları API'den Güncelle"):
                     data = yf.Ticker(clean_name).history(period="1d")
                     if not data.empty:
                         yeni_fiyat = data['Close'].iloc[-1]
-                        df.at[index, 'Satis'] = yeni_fiyat
-                        df.at[index, 'Kar'] = (yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap']
+                        df.at[index, 'Satis'] = round(yeni_fiyat, 2)
+                        # Kar hesabına round(..., 2) eklendi
+                        df.at[index, 'Kar'] = round((yeni_fiyat - row['Alis']) * row['Lot'] * row['Hesap'], 2)
                 except: continue
         if update_google_sheet(sheet, df):
             st.success("Tüm fiyatlar güncellendi!")
@@ -141,10 +143,10 @@ with st.sidebar:
 
     if st.button("🚀 Kaydet ve Yedekle"):
         if h_adi_raw != "":
-            yeni_kar = (h_satis - h_alis) * h_lot * h_hesap
+            # Kar hesabına round(..., 2) eklendi
+            yeni_kar = round((h_satis - h_alis) * h_lot * h_hesap, 2)
             yeni_veri = {"Hisse": h_adi_raw, "Alis": h_alis, "Satis": h_satis, "Lot": h_lot, "Hesap": h_hesap, "Kar": yeni_kar, "Tur": h_tur, "Durum": h_durum}
             
-            # Eski kaydı varsa sil, yenisini ekle
             df = pd.concat([df[df["Hisse"] != h_adi_raw], pd.DataFrame([yeni_veri])], ignore_index=True)
             
             if update_google_sheet(sheet, df):
